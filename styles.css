@@ -2,25 +2,62 @@ body {
     font-family: Arial, sans-serif;
     display: flex;
     justify-content: center;
-    align-items: end;
+    align-items: center;
     height: 100vh;
     margin: 0;
-    background-color: #393E46;
-    padding-bottom: 2em; 
+    background-color: #121212; /* Dark background for body */
+    color: #e0e0e0; /* Light text color for contrast */
 }
 
 .chat-container {
     width: 100%;
     max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    height: 90vh;
+    border: 1px solid #333; /* Darker border color */
+    border-radius: 10px;
+    background-color: #1e1e1e; /* Dark background for the chat container */
+    box-shadow: 0 0 10px rgba(0,0,0,0.5); /* Darker shadow for a more pronounced effect */
+}
+
+.chat-messages {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end; /* Align messages to the bottom */
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    border-bottom: 1px solid #333; /* Dark border for message area */
+    background-color: #1e1e1e; /* Same dark background for consistency */
+}
+
+.message {
+    margin-bottom: 10px;
+    padding: 10px;
+    border-radius: 15px;
+    max-width: 80%;
+    word-wrap: break-word;
+}
+
+.sent {
+    background-color: #007bff; /* Bright color for sent messages */
+    color: #fff;
+    align-self: flex-end;
+}
+
+.received {
+    background-color: #333; /* Slightly lighter dark color for received messages */
+    color: #e0e0e0;
+    align-self: flex-start;
 }
 
 .chat-input {
     display: flex;
     align-items: center;
-    border: 1px solid #ccc;
-    border-radius: 20px;
+    border-top: 1px solid #333; /* Dark border at the top */
     padding: 10px;
-    background-color: #fff;
+    background-color: #1e1e1e; /* Dark background for the input area */
 }
 
 #message-input {
@@ -31,10 +68,12 @@ body {
     border-radius: 20px;
     font-size: 16px;
     margin-right: 10px;
+    background-color: #333; /* Dark background for input box */
+    color: #e0e0e0; /* Light text color in the input box */
 }
 
 #send-button {
-    background-color: #007bff;
+    background-color: #007bff; /* Bright color for the send button */
     color: #fff;
     border: none;
     border-radius: 20px;
@@ -45,5 +84,5 @@ body {
 }
 
 #send-button:hover {
-    background-color: #0056b3;
+    background-color: #0056b3; /* Darker shade on hover */
 }

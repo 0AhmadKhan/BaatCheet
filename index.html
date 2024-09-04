@@ -3,17 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BaatCheet</title>
-    <link rel="stylesheet" href="styles.css">	
-    <link href="https://fonts.googleapis.com/css?family=Indie+Flower|Lobster" rel="stylesheet">
+    <title>Chat App</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
-<body>    
+<body>
     <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+            <!-- Example messages -->
+            <div class="message sent">Hello! How are you?</div>
+            <div class="message received">I'm good, thanks! How about you?</div>
+            <div class="message sent">I'm great, just working on a project.</div>
+        </div>
         <div class="chat-input">
-            <input type="text" placeholder="Type a message ..." id="message-input">
+            <input type="text" placeholder="Type a message..." id="message-input">
             <button id="send-button">Send</button>
         </div>
     </div>
-    <script src="script.js"></script>
 </body>
 </html>
