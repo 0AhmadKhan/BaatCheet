@@ -21,12 +21,19 @@ body {
     box-shadow: 0 0 10px rgba(0,0,0,0.5); /* Darker shadow for a more pronounced effect */
 }
 
+.scrollable-div {
+    display: block;
+    height: auto;
+    overflow-y: auto;
+}
+
 .chat-messages {
     display: flex;
     flex-direction: column;
     justify-content: flex-end; /* Align messages to the bottom */
     flex: 1;
     padding: 10px;
+    height: auto;
     overflow-y: auto;
     border-bottom: 1px solid #333; /* Dark border for message area */
     background-color: #1e1e1e; /* Same dark background for consistency */
