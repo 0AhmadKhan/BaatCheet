@@ -188,6 +188,12 @@ window.onload = () => {
     createPeerConnection();
 }
 
+window.onbeforeunload = async () => {
+    console.log("leaving");
+    await deleteDataInBase();
+    return "Clearing Database";
+}
+
 sendButton.addEventListener('click', () => {
     const message = messageBox.value;
     const newMessage = document.createElement('div');
