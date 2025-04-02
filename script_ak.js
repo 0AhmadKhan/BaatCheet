@@ -3,6 +3,15 @@ const signalingInput = document.getElementById("signaling-input");
 const signalingSendButton = document.getElementById("signaling-send-button");
 const signalingMessages = document.getElementById("signaling-messages");
 
+// DOM elements for chat
+const messageInput = document.getElementById("message-input");
+const sendButton = document.getElementById("send-button");
+const chatMessages = document.getElementById("chat-messages");
+
+// Disable chat input by default
+messageInput.disabled = true;
+sendButton.disabled = true;
+
 // Global WebRTC objects
 let peerConnection;
 let dataChannel;
@@ -10,9 +19,36 @@ const servers = {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
 
-
 // App State
 let role = null; // "caller" or "callee"
+
+
+// Enable chat once connection is live
+function setupDataChannelEvents(channel) {
+    channel.onopen = () => {
+        addSignalingMessage("✅ Data channel is open. You can now chat!", "received");
+
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+        messageInput.focus();
+    };
+
+    channel.onclose = () => {
+        addSignalingMessage("⚠️ Data channel closed.", "received");
+
+        messageInput.disabled = true;
+        sendButton.disabled = true;
+    };
+
+    channel.onmessage = (event) => {
+        const msgDiv = document.createElement("div");
+        msgDiv.textContent = event.data;
+        msgDiv.className = "message received";
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    };
+}
+
 
 
 // Helper to add message to signaling panel
@@ -31,6 +67,7 @@ async function startCaller() {
 
     // Create data channel
     dataChannel = peerConnection.createDataChannel("chat");
+    setupDataChannelEvents(dataChannel);
 
     // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
@@ -68,15 +105,7 @@ async function startCallee(offerSDP) {
         // Listen for data channel
         peerConnection.ondatachannel = (event) => {
             dataChannel = event.channel;
-
-            dataChannel.onopen = () => {
-                addSignalingMessage("✅ Data channel is open!", "received");
-                // Enable chat input here if needed
-            };
-
-            dataChannel.onmessage = (event) => {
-                console.log("Message received:", event.data);
-            };
+            setupDataChannelEvents(dataChannel);
         };
 
         // Set the received offer as remote description
@@ -145,6 +174,22 @@ signalingSendButton.addEventListener("click", () => {
 });
 
 
+sendButton.addEventListener("click", () => {
+    const message = messageInput.value.trim();
+    if (message === "") return;
+
+    // Send through data channel
+    dataChannel.send(message);
+
+    // Display in UI
+    const msgDiv = document.createElement("div");
+    msgDiv.textContent = message;
+    msgDiv.className = "message sent";
+    chatMessages.appendChild(msgDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    messageInput.value = "";
+});
 
 
 
