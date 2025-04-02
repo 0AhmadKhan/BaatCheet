@@ -79,17 +79,6 @@ async function startCaller() {
         }
     };
 
-    // Data channel events (can expand in later steps)
-    dataChannel.onopen = () => {
-        addSignalingMessage("✅ Data channel is open!", "received");
-        // Here we could enable the main chat UI
-    };
-
-    dataChannel.onmessage = (event) => {
-        // We'll use this in Section 5
-        console.log("Message received:", event.data);
-    };
-
     // Create offer
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
