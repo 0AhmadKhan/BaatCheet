@@ -3,25 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat App ver 1.0</title>
+    <title>Chat App ver 2.0</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="chat-container">
-        <div class="scrollable-div" id="scrollable-div">
-            <div class="chat-messages" id="chat-messages">
-                <!-- Example messages -->
-                <!-- <div class="message sent">Hello! How are you?</div>
-                <div class="message received">I'm good, thanks! How about you?</div>
-                <div class="message sent">I'm great, just working on a project.</div> -->
+    <div class="main-container">
+        <!-- Signaling Side -->
+        <div class="signaling-container">
+            <div class="scrollable-div" id="signaling-scrollable">
+                <div class="signaling-messages" id="signaling-messages">
+                    <!-- Manual signaling messages like offer/answer/ICE go here -->
+                </div>
             </div>
-        </div>        
-        <div class="chat-input">
-            <input type="text" placeholder="Type a message..." id="message-input">
-            <button id="send-button">Send</button>
+            <div class="signaling-input">
+                <textarea placeholder="Paste or type signaling data..." id="signaling-input"></textarea>
+                <button id="signaling-send-button">Send</button>
+            </div>
+        </div>
+
+        <!-- Chat Side -->
+        <div class="chat-container">
+            <div class="scrollable-div" id="scrollable-div">
+                <div class="chat-messages" id="chat-messages">
+                    <!-- Actual chat messages -->
+                </div>
+            </div>        
+            <div class="chat-input">
+                <input type="text" placeholder="Type a message..." id="message-input">
+                <button id="send-button">Send</button>
+            </div>
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script_ak.js"></script> <!-- Using the new script file -->
 </body>
 </html>

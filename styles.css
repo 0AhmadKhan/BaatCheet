@@ -94,3 +94,72 @@ body {
 #send-button:hover {
     background-color: #0056b3; /* Darker shade on hover */
 }
+
+.main-container {
+    display: flex;
+    flex-direction: row;
+    height: 90vh;
+    width: 100vw;
+    background-color: #121212;
+}
+
+/* Shared scrollable area styling */
+.scrollable-div {
+    height: auto;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* Left signaling panel */
+.signaling-container {
+    width: 35%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    border-right: 1px solid #333;
+    background-color: #1e1e1e;
+    padding: 10px;
+}
+
+.signaling-messages {
+    flex: 1;
+    padding: 10px;
+    background-color: #1e1e1e;
+    overflow-y: auto;
+    border-bottom: 1px solid #333;
+}
+
+.signaling-input {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 10px;
+}
+
+#signaling-input {
+    min-height: 100px;
+    background-color: #333;
+    color: #e0e0e0;
+    border-radius: 10px;
+    padding: 10px;
+    border: none;
+    resize: vertical;
+}
+
+#signaling-send-button {
+    align-self: flex-end;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+#signaling-send-button:hover {
+    background-color: #218838;
+}
+
