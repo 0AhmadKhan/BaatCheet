@@ -59,12 +59,57 @@ async function startCaller() {
 }
 
 
+async function startCallee(offerSDP) {
+    try {
+        const offer = new RTCSessionDescription(JSON.parse(offerSDP));
+
+        peerConnection = new RTCPeerConnection(servers);
+
+        // Listen for data channel
+        peerConnection.ondatachannel = (event) => {
+            dataChannel = event.channel;
+
+            dataChannel.onopen = () => {
+                addSignalingMessage("✅ Data channel is open!", "received");
+                // Enable chat input here if needed
+            };
+
+            dataChannel.onmessage = (event) => {
+                console.log("Message received:", event.data);
+            };
+        };
+
+        // Set the received offer as remote description
+        await peerConnection.setRemoteDescription(offer);
+
+        // When ICE gathering is done, send answer SDP
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate === null) {
+                const answerSDP = JSON.stringify(peerConnection.localDescription);
+                addSignalingMessage("📤 Your Answer SDP (copy and send to caller):", "received");
+                addSignalingMessage(answerSDP, "sent");
+            }
+        };
+
+        // Create and set local answer
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+
+    } catch (err) {
+        addSignalingMessage("❌ Failed to parse or use offer SDP. Make sure it's valid.", "received");
+        console.error(err);
+    }
+}
+
+
+
 // Event Listener for signaling "Send" button
 signalingSendButton.addEventListener("click", () => {
-    const input = signalingInput.value.trim().toLowerCase();
+    const input = signalingInput.value;
     signalingInput.value = "";
 
-    addSignalingMessage(`You: ${input}`, "sent");
+    addSignalingMessage(input, "sent");
+
 
     // Handle role assignment
     if (role === null) {
@@ -80,7 +125,12 @@ signalingSendButton.addEventListener("click", () => {
             addSignalingMessage("❌ Invalid role. Please type 'caller' or 'callee'.", "received");
         }
     } else {
-        addSignalingMessage(`Role already set as '${role}'.`, "received");
+        if (role === "callee") {
+            // Assume this is an offer SDP and try to use it
+            startCallee(input);
+        } else {
+            addSignalingMessage(`Role already set as '${role}'. No action needed.`, "received");
+        }
     }
 });
 
