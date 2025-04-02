@@ -128,6 +128,16 @@ signalingSendButton.addEventListener("click", () => {
         if (role === "callee") {
             // Assume this is an offer SDP and try to use it
             startCallee(input);
+        } else if (role === "caller") {
+            try {
+                const answer = new RTCSessionDescription(JSON.parse(input));
+                peerConnection.setRemoteDescription(answer).then(() => {
+                    addSignalingMessage("✅ Answer received and connection established!", "received");
+                });
+            } catch (err) {
+                addSignalingMessage("❌ Failed to parse or apply answer SDP. Make sure it's valid.", "received");
+                console.error(err);
+            }
         } else {
             addSignalingMessage(`Role already set as '${role}'. No action needed.`, "received");
         }
