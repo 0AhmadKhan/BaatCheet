@@ -27,6 +27,38 @@ const servers = {
 const dbRef = firebase.database().ref();
 const transfers = {};
 
+/**
+ * Display a placeholder in the chat UI for an incoming file transfer.
+ * @param {string} fileId      Unique transfer ID
+ * @param {string} fileName    Name of the incoming file
+ * @param {number} totalChunks How many chunks we expect
+ */
+
+//UI for incoming file 
+function showIncomingFileUI(fileId, fileName, totalChunks) {
+    // Create a container div to hold the incoming‐file UI
+    const container = document.createElement('div');
+    container.id = `incoming-${fileId}`;
+    container.className = 'incoming-file';
+  
+    // File name label
+    const nameLabel = document.createElement('div');
+    nameLabel.textContent = `Incoming file: ${fileName}`;
+    nameLabel.className = 'incoming-file-name';
+    container.appendChild(nameLabel);
+  
+    // Progress text
+    const progressText = document.createElement('div');
+    progressText.textContent = `0 / ${totalChunks} chunks received`;
+    progressText.className = 'incoming-file-progress';
+    container.appendChild(progressText);
+  
+    // Append to your chat message area (or a dedicated sidebar)
+    chatMessages.appendChild(container);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+  
+
 // Enable chat once connection is live
 function setupDataChannelEvents(channel) {
     channel.onopen = () => {
