@@ -24,9 +24,8 @@ let sessionId = null;
 const servers = {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
-
 const dbRef = firebase.database().ref();
-
+const transfers = {};
 
 // Enable chat once connection is live
 function setupDataChannelEvents(channel) {
@@ -46,12 +45,38 @@ function setupDataChannelEvents(channel) {
     };
 
     channel.onmessage = (event) => {
+        // Metadata packet?
+        if (typeof event.data === 'string') {
+          let meta;
+          try {
+            meta = JSON.parse(event.data);
+          } catch {
+            // not JSON → fall through to chat display
+          }
+          if (meta && meta.fileId && meta.totalChunks) {
+            // initialize transfer state
+            transfers[meta.fileId] = {
+              fileName:  meta.fileName,
+              mimeType:  meta.mimeType,
+              fileSize:  meta.fileSize,
+              chunkSize: meta.chunkSize,
+              totalChunks: meta.totalChunks,
+              chunks: new Array(meta.totalChunks),
+              receivedCount: 0
+            };
+            showIncomingFileUI(meta.fileId, meta.fileName, meta.totalChunks);
+            return;
+          }
+        }
+      
+        // Fallback: plain chat message
         const msgDiv = document.createElement("div");
         msgDiv.textContent = event.data;
         msgDiv.className = "message received";
         chatMessages.appendChild(msgDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
-    };
+      };
+      
 }
 
 
