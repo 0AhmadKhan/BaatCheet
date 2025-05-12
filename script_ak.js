@@ -7,6 +7,8 @@ const signalingMessages = document.getElementById("signaling-messages");
 const messageInput = document.getElementById("message-input");
 const sendButton = document.getElementById("send-button");
 const chatMessages = document.getElementById("chat-messages");
+const fileInput    = document.getElementById('fileInput');
+const sendFileBtn  = document.getElementById('sendFileBtn');
 
 // Disable chat input by default
 messageInput.disabled = true;
@@ -262,6 +264,45 @@ sendButton.addEventListener("click", () => {
     messageInput.value = "";
 });
 
+
+// Enable “Send File” button
+fileInput.addEventListener('change', () => {
+    // fileInput.files is a FileList; we only allow one file for now
+    if (fileInput.files.length > 0) {
+      sendFileBtn.disabled = false;
+    } else {
+      sendFileBtn.disabled = true;
+    }
+  });
+
+
+// On click, build and send the metadata object
+sendFileBtn.addEventListener('click', () => {
+    const file = fileInput.files[0];          // File API object
+    const fileId = crypto.randomUUID();       // Unique transfer ID
+  
+    // Destructure the properties we need
+    const { name: fileName, size: fileSize, type: mimeType } = file;
+    const chunkSize   = 16 * 1024;            // e.g. 16 KiB for later chunking
+    const totalChunks = Math.ceil(fileSize / chunkSize);
+  
+    // Build the metadata packet
+    const metadata = {
+      fileId,
+      fileName,
+      mimeType,
+      fileSize,
+      chunkSize,
+      totalChunks
+    };
+  
+    // Send it as JSON over your open DataChannel
+    dataChannel.send(JSON.stringify(metadata));
+  
+    // Disable UI to prevent double‐sends until next selection
+    sendFileBtn.disabled = true;
+    fileInput.value = '';  // clear selection for next time
+  });
 
 
 
