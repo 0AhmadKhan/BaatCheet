@@ -27,15 +27,15 @@ const servers = {
 const dbRef = firebase.database().ref();
 const transfers = {};
 
+
+//UI for incoming file
 /**
  * Display a placeholder in the chat UI for an incoming file transfer.
  * @param {string} fileId      Unique transfer ID
  * @param {string} fileName    Name of the incoming file
  * @param {number} totalChunks How many chunks we expect
  */
-
-//UI for incoming file 
-function showIncomingFileUI(fileId, fileName, totalChunks) {
+ function showIncomingFileUI(fileId, fileName, totalChunks) {
     // Create a container div to hold the incoming‐file UI
     const container = document.createElement('div');
     container.id = `incoming-${fileId}`;
@@ -57,7 +57,32 @@ function showIncomingFileUI(fileId, fileName, totalChunks) {
     chatMessages.appendChild(container);
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
+
+
+// Create Blob array  
+/**
+ * Slice a File/Blob into fixed-size chunks.
+ * Logs each chunk’s index and size.
+ *
+ * @param {File|Blob} file
+ * @param {number} chunkSize
+ * @returns {Blob[]} Array of chunk Blobs
+ */
+function sliceFile(file, chunkSize) {
+    const chunks = [];
+    let offset = 0;
+    const total = Math.ceil(file.size / chunkSize);
   
+    while (offset < file.size) {
+      const chunk = file.slice(offset, offset + chunkSize);
+      chunks.push(chunk);
+      console.log(`Prepared chunk ${chunks.length}/${total}: ${chunk.size} bytes`);
+      offset += chunkSize;
+    }
+  
+    return chunks;
+  } 
+
 
 // Enable chat once connection is live
 function setupDataChannelEvents(channel) {
@@ -353,6 +378,9 @@ sendFileBtn.addEventListener('click', () => {
       totalChunks
     };
   
+    // Slice and log chunks
+    const chunks = sliceFile(file, chunkSize);
+
     // Send it as JSON over your open DataChannel
     dataChannel.send(JSON.stringify(metadata));
   
