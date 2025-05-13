@@ -59,7 +59,7 @@ const transfers = {};
   }
 
 
-// Create Blob array  
+// Slice Blob array  
 /**
  * Slice a File/Blob into fixed-size chunks.
  * Logs each chunk’s index and size.
@@ -82,6 +82,27 @@ function sliceFile(file, chunkSize) {
   
     return chunks;
   } 
+
+
+// Read Blob array
+/**
+ * Read a Blob chunk into an ArrayBuffer.
+ *
+ * @param {Blob} chunk
+ * @returns {Promise<ArrayBuffer>}
+ */
+function readChunk(chunk) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(reader.result);
+    };
+    reader.onerror = () => {
+      reject(new Error('Failed to read chunk'));
+    };
+    reader.readAsArrayBuffer(chunk);
+  });
+}
 
 
 // Enable chat once connection is live
@@ -380,6 +401,18 @@ sendFileBtn.addEventListener('click', () => {
   
     // Slice and log chunks
     const chunks = sliceFile(file, chunkSize);
+
+    // After slicing, load each chunk into memory
+    (async () => {
+    for (let i = 0; i < chunks.length; i++) {
+        try {
+        const buffer = await readChunk(chunks[i]);
+        console.log(`Loaded chunk ${i + 1}/${chunks.length}: ${buffer.byteLength} bytes`);
+        } catch (err) {
+        console.error('Error reading chunk', i, err);
+        }
+    }
+    })();
 
     // Send it as JSON over your open DataChannel
     dataChannel.send(JSON.stringify(metadata));
