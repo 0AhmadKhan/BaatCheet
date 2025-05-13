@@ -402,20 +402,25 @@ sendFileBtn.addEventListener('click', () => {
     // Slice and log chunks
     const chunks = sliceFile(file, chunkSize);
 
-    // After slicing, load each chunk into memory
-    (async () => {
-    for (let i = 0; i < chunks.length; i++) {
-        try {
-        const buffer = await readChunk(chunks[i]);
-        console.log(`Loaded chunk ${i + 1}/${chunks.length}: ${buffer.byteLength} bytes`);
-        } catch (err) {
-        console.error('Error reading chunk', i, err);
-        }
-    }
-    })();
-
-    // Send it as JSON over your open DataChannel
+    // Send the metadata packet first
     dataChannel.send(JSON.stringify(metadata));
+
+    // send each chunk in sequence
+    (async () => {
+        for (let i = 0; i < chunks.length; i++) {
+        // Read the chunk into an ArrayBuffer
+        const buffer = await readChunk(chunks[i]);
+
+        // a small header so the receiver knows which chunk this is
+        const header = { fileId, chunkIndex: i };
+        dataChannel.send(JSON.stringify(header));
+
+        // Send the raw bytes
+        dataChannel.send(buffer);
+
+        console.log(`Sent chunk ${i + 1}/${chunks.length}: ${buffer.byteLength} bytes`);
+        }
+    })();
   
     // Disable UI to prevent double‐sends until next selection
     sendFileBtn.disabled = true;
