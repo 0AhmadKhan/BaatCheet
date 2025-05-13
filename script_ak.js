@@ -26,9 +26,10 @@ const servers = {
 };
 const dbRef = firebase.database().ref();
 const transfers = {};
+let pendingChunkHeader = null;
 
 
-//UI for incoming file
+// UI for incoming file
 /**
  * Display a placeholder in the chat UI for an incoming file transfer.
  * @param {string} fileId      Unique transfer ID
@@ -57,6 +58,17 @@ const transfers = {};
     chatMessages.appendChild(container);
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
+
+
+// UI progress of incoming file
+/**
+ * Update the UI progress text for an incoming file.
+ */
+function updateIncomingFileProgress(fileId, receivedCount, totalChunks) {
+  const container = document.getElementById(`incoming-${fileId}`);
+  const progEl = container.querySelector('.incoming-file-progress');
+  progEl.textContent = `${receivedCount} / ${totalChunks} chunks received`;
+}
 
 
 // Slice Blob array  
@@ -105,6 +117,26 @@ function readChunk(chunk) {
 }
 
 
+// Download link for shared file
+/**
+ * Once all chunks are here, reassemble and offer a download link.
+ */
+function finalizeFileTransfer(fileId) {
+  const t = transfers[fileId];
+  const blob = new Blob(t.chunks, { type: t.mimeType });
+  const url  = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href        = url;
+  link.download    = t.fileName;
+  link.textContent = `Download ${t.fileName}`;
+  link.className   = 'incoming-file-download';
+
+  const container = document.getElementById(`incoming-${fileId}`);
+  container.appendChild(link);
+}
+
+
 // Enable chat once connection is live
 function setupDataChannelEvents(channel) {
     channel.onopen = () => {
@@ -122,38 +154,71 @@ function setupDataChannelEvents(channel) {
         sendButton.disabled = true;
     };
 
-    channel.onmessage = (event) => {
-        // Metadata packet?
+    channel.onmessage = event => {
+        // Is it a string? Try parsing JSON
         if (typeof event.data === 'string') {
-          let meta;
-          try {
-            meta = JSON.parse(event.data);
-          } catch {
-            // not JSON → fall through to chat display
-          }
-          if (meta && meta.fileId && meta.totalChunks) {
+            let msg;
+            try {
+            msg = JSON.parse(event.data);
+            } catch {
+            // Not JSON → fall back to chat rendering
+            }
+
+            // File‐metadata handshake?
+            if (msg && msg.fileId && msg.totalChunks) {
             // initialize transfer state
-            transfers[meta.fileId] = {
-              fileName:  meta.fileName,
-              mimeType:  meta.mimeType,
-              fileSize:  meta.fileSize,
-              chunkSize: meta.chunkSize,
-              totalChunks: meta.totalChunks,
-              chunks: new Array(meta.totalChunks),
-              receivedCount: 0
+            transfers[msg.fileId] = {
+                fileName:    msg.fileName,
+                mimeType:    msg.mimeType,
+                fileSize:    msg.fileSize,
+                chunkSize:   msg.chunkSize,
+                totalChunks: msg.totalChunks,
+                chunks:      new Array(msg.totalChunks),
+                receivedCount: 0
             };
-            showIncomingFileUI(meta.fileId, meta.fileName, meta.totalChunks);
+            showIncomingFileUI(msg.fileId, msg.fileName, msg.totalChunks);
             return;
-          }
+            }
+
+            // Per‐chunk header?
+            if (msg && msg.fileId != null && msg.chunkIndex != null) {
+            // stash it until the next (binary) message arrives
+            pendingChunkHeader = { fileId: msg.fileId, chunkIndex: msg.chunkIndex };
+            return;
+            }
+
+            // Otherwise, treat as a chat message
+            const msgDiv = document.createElement("div");
+            msgDiv.textContent = event.data;
+            msgDiv.className   = "message received";
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return;
         }
-      
-        // Fallback: plain chat message
-        const msgDiv = document.createElement("div");
-        msgDiv.textContent = event.data;
-        msgDiv.className = "message received";
-        chatMessages.appendChild(msgDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      };
+
+        // If we get here, it must be a binary ArrayBuffer
+        if (event.data instanceof ArrayBuffer && pendingChunkHeader) {
+            const { fileId, chunkIndex } = pendingChunkHeader;
+            const buf = event.data;
+
+            // store the chunk
+            const t = transfers[fileId];
+            t.chunks[chunkIndex] = buf;
+            t.receivedCount += 1;
+
+            // update UI
+            updateIncomingFileProgress(fileId, t.receivedCount, t.totalChunks);
+
+            // if done, assemble file
+            if (t.receivedCount === t.totalChunks) {
+            finalizeFileTransfer(fileId);
+            }
+
+            // clear the pending header
+            pendingChunkHeader = null;
+            return;
+        }
+    };
       
 }
 
