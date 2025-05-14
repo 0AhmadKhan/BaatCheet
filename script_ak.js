@@ -182,7 +182,7 @@ function setupDataChannelEvents(channel) {
             }
 
             // Per‐chunk header?
-            if (msg && msg.fileId != null && msg.chunkIndex != null) {
+            if (msg && msg.type === "chunk") {
                 // stash it until the next (binary) message arrives
                 pendingChunkHeader = { fileId: msg.fileId, chunkIndex: msg.chunkIndex };
                 return;
@@ -497,7 +497,7 @@ sendFileBtn.addEventListener('click', () => {
             const buffer = await readChunk(chunks[i]);
 
             // a small header so the receiver knows which chunk this is
-            const header = { fileId, chunkIndex: i };
+            const header = { type: "chunk", fileId, chunkIndex: i };
             dataChannel.send(JSON.stringify(header));
 
             // Send the raw bytes
