@@ -16,7 +16,7 @@ sendButton.disabled = true;
 
 // WebRTC and Firebase state
 let peerConnection;
-let dataChannel;
+let chatChannel, fileChannel;
 let role = null;
 let useFirebase = false;
 let sessionId = null;
@@ -63,10 +63,7 @@ const RETRANSMIT_TIMEOUT = 5000;
   }
 
 
-// UI progress of incoming file
-/**
- * Update the UI progress text for an incoming file.
- */
+// update UI progress of incoming file
 function updateIncomingFileProgress(fileId, receivedCount, totalChunks) {
     const container = document.getElementById(`incoming-${fileId}`);
     const progEl = container.querySelector('.incoming-file-progress');
@@ -120,16 +117,13 @@ function readChunk(chunk) {
 }
 
 
-// Send chunks
-/**
- * Send a single chunk (reads it, then emits header + payload).
- */
+// Send a single chunk (reads it, then emits header + payload)
 async function sendChunkData(fileId, chunkIndex) {
     const s = senders[fileId];
     const buffer = await readChunk(s.chunks[chunkIndex]);
     // tagged as "chunk" 
-    dataChannel.send(JSON.stringify({ type: "chunk", fileId, chunkIndex }));
-    dataChannel.send(buffer);
+    fileChannel.send(JSON.stringify({ type: "chunk", fileId, chunkIndex }));
+    fileChannel.send(buffer);
     console.log(`Sent chunk ${chunkIndex+1}/${s.totalChunks}`);
 
     // schedule retransmit if no ACK
@@ -146,10 +140,7 @@ async function sendChunkData(fileId, chunkIndex) {
 }
 
 
-// Move the sliding window
-/**
- * Advance the sliding window, sending up to windowSize in-flight chunks.
- */
+// Advance the sliding window, sending up to windowSize in-flight chunks
 function sendWindow(fileId) {
     const s = senders[fileId];
     // send until either end of file or fill window
@@ -163,10 +154,7 @@ function sendWindow(fileId) {
 }
 
 
-// Download link for shared file
-/**
- * Once all chunks are here, reassemble and offer a download link.
- */
+// Once all chunks are here, reassemble and offer a download link
 function finalizeFileTransfer(fileId) {
     const t = transfers[fileId];
     const blob = new Blob(t.chunks, { type: t.mimeType });
@@ -183,34 +171,59 @@ function finalizeFileTransfer(fileId) {
 }
 
 
-// Enable chat once connection is live
-function setupDataChannelEvents(channel) {
+// Handle control of the chat-only channel
+function setupChatChannelEvents(channel) {
     channel.onopen = () => {
         addSignalingMessage("✅ Data channel is open. You can now chat!", "received");
 
         messageInput.disabled = false;
-        sendButton.disabled = false;
+        sendButton.disabled  = false;
         messageInput.focus();
+    };
+    channel.onclose = () => {
+        addSignalingMessage("⚠️ Data channel closed.", "received");
+        
+        messageInput.disabled = true;
+        sendButton.disabled  = true;
+    };
+    channel.onmessage = event => {
+        const msgDiv = document.createElement("div");
+        msgDiv.textContent = event.data;
+        msgDiv.className   = "message received";
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    };
+}
+
+
+// Handle control of the file-only channel.
+function setupFileChannelEvents(channel) {
+    channel.onopen = () => {
+        addSignalingMessage("✅ File channel is open. You can now send files!", "received");
+
+        fileInput.disabled   = false;
+        sendFileBtn.disabled = false;
     };
 
     channel.onclose = () => {
-        addSignalingMessage("⚠️ Data channel closed.", "received");
+        addSignalingMessage("⚠️ File channel closed.", "received");
 
-        messageInput.disabled = true;
-        sendButton.disabled = true;
+        fileInput.disabled   = true;
+        sendFileBtn.disabled = true;
     };
 
     channel.onmessage = event => {
-        // Is it a string? Try parsing JSON
+        // Parse JSON if it’s a string
         if (typeof event.data === 'string') {
             let msg;
             try {
-            msg = JSON.parse(event.data);
+                msg = JSON.parse(event.data);
             } catch {
-            // Not JSON → fall back to chat rendering
+                console.warn("fileChannel: unexpected non-JSON string", event.data);
+                return;
             }
 
-            // File‐metadata handshake?
+            // File-metadata handshake
             if (msg && msg.fileId && msg.totalChunks) {
                 // initialize transfer state
                 transfers[msg.fileId] = {
@@ -226,13 +239,14 @@ function setupDataChannelEvents(channel) {
                 return;
             }
 
-            // Per‐chunk header?
+            // Per‐chunk header
             if (msg && msg.type === "chunk") {
                 // stash it until the next (binary) message arrives
                 pendingChunkHeader = { fileId: msg.fileId, chunkIndex: msg.chunkIndex };
                 return;
             }
 
+            // ACK
             if (msg && msg.type === "ack") {
                 const s = senders[msg.fileId];
                 if (s) {
@@ -257,12 +271,8 @@ function setupDataChannelEvents(channel) {
                 return;
             }
 
-            // Otherwise, treat as a chat message
-            const msgDiv = document.createElement("div");
-            msgDiv.textContent = event.data;
-            msgDiv.className   = "message received";
-            chatMessages.appendChild(msgDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            // no other JSON messages expected on fileChannel
+            console.warn("fileChannel: unrecognized JSON", msg);
             return;
         }
 
@@ -282,7 +292,7 @@ function setupDataChannelEvents(channel) {
                 fileId,
                 chunkIndex
             };
-            dataChannel.send(JSON.stringify(ack));
+            channel.send(JSON.stringify(ack));
             console.log(`ACK sent for chunk ${chunkIndex}`);
 
             // update UI
@@ -290,13 +300,16 @@ function setupDataChannelEvents(channel) {
 
             // if done, assemble file
             if (t.receivedCount === t.totalChunks) {
-            finalizeFileTransfer(fileId);
+                finalizeFileTransfer(fileId);
             }
 
             // clear the pending header
             pendingChunkHeader = null;
             return;
         }
+
+        console.warn("fileChannel: unknown message type", event.data);
+
     };
       
 }
@@ -316,9 +329,16 @@ function addSignalingMessage(message, type = "system") {
 async function startCaller() {
     peerConnection = new RTCPeerConnection(servers);
 
-    // Create data channel
-    dataChannel = peerConnection.createDataChannel("chat");
-    setupDataChannelEvents(dataChannel);
+    // Reliable, ordered chat channel
+    chatChannel = peerConnection.createDataChannel("chat");
+    setupChatChannelEvents(chatChannel);
+
+    // Unordered, zero-retransmit file channel
+    fileChannel = peerConnection.createDataChannel("file", {
+        ordered: false,
+        maxRetransmits: 0
+    });
+    setupFileChannelEvents(fileChannel);
 
     // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
@@ -345,8 +365,14 @@ async function startCallee(offerSDP) {
 
         // Listen for data channel
         peerConnection.ondatachannel = (event) => {
-            dataChannel = event.channel;
-            setupDataChannelEvents(dataChannel);
+            const channel = event.channel;
+            if (channel.label === "chat") {
+                chatChannel = channel;
+                setupChatChannelEvents(chatChannel);
+            } else if (channel.label === "file") {
+                fileChannel = channel;
+                setupFileChannelEvents(fileChannel);
+            }
         };
 
         // Set the received offer as remote description
@@ -396,8 +422,17 @@ async function handleFirebaseMode() {
 
 async function startCallerFirebase() {
     peerConnection = new RTCPeerConnection(servers);
-    dataChannel = peerConnection.createDataChannel("chat");
-    setupDataChannelEvents(dataChannel);
+    
+    // Reliable, ordered chat channel
+    chatChannel = peerConnection.createDataChannel("chat");
+    setupChatChannelEvents(chatChannel);
+
+    // Unordered, zero-retransmit file channel
+    fileChannel = peerConnection.createDataChannel("file", {
+        ordered: false,
+        maxRetransmits: 0
+    });
+    setupFileChannelEvents(fileChannel);
 
     peerConnection.onicecandidate = async (event) => {
         if (event.candidate === null) {
@@ -424,8 +459,14 @@ async function startCalleeFirebase(offerSDP) {
     peerConnection = new RTCPeerConnection(servers);
 
     peerConnection.ondatachannel = (event) => {
-        dataChannel = event.channel;
-        setupDataChannelEvents(dataChannel);
+        const channel = event.channel;
+        if (channel.label === "chat") {
+            chatChannel = channel;
+            setupChatChannelEvents(chatChannel);
+        } else if (channel.label === "file") {
+            fileChannel = channel;
+            setupFileChannelEvents(fileChannel);
+        }
     };
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(offerSDP)));
@@ -499,7 +540,7 @@ sendButton.addEventListener("click", () => {
     if (message === "") return;
 
     // Send through data channel
-    dataChannel.send(message);
+    chatChannel.send(message);
 
     // Display in UI
     const msgDiv = document.createElement("div");
@@ -547,7 +588,7 @@ sendFileBtn.addEventListener('click', () => {
     const chunks = sliceFile(file, chunkSize);
 
     // Send the metadata packet first
-    dataChannel.send(JSON.stringify(metadata));
+    fileChannel.send(JSON.stringify(metadata));
 
     // Initialize sliding-window state for this transfer
     senders[fileId] = {
