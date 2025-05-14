@@ -28,6 +28,8 @@ const dbRef = firebase.database().ref();
 const transfers = {};
 let pendingChunkHeader = null;
 const senders = {};
+// How long to wait (ms) for an ACK before retransmitting
+const RETRANSMIT_TIMEOUT = 5000;
 
 
 // UI for incoming file
@@ -66,9 +68,9 @@ const senders = {};
  * Update the UI progress text for an incoming file.
  */
 function updateIncomingFileProgress(fileId, receivedCount, totalChunks) {
-  const container = document.getElementById(`incoming-${fileId}`);
-  const progEl = container.querySelector('.incoming-file-progress');
-  progEl.textContent = `${receivedCount} / ${totalChunks} chunks received`;
+    const container = document.getElementById(`incoming-${fileId}`);
+    const progEl = container.querySelector('.incoming-file-progress');
+    progEl.textContent = `${receivedCount} / ${totalChunks} chunks received`;
 }
 
 
@@ -87,10 +89,10 @@ function sliceFile(file, chunkSize) {
     const total = Math.ceil(file.size / chunkSize);
   
     while (offset < file.size) {
-      const chunk = file.slice(offset, offset + chunkSize);
-      chunks.push(chunk);
-      console.log(`Prepared chunk ${chunks.length}/${total}: ${chunk.size} bytes`);
-      offset += chunkSize;
+        const chunk = file.slice(offset, offset + chunkSize);
+        chunks.push(chunk);
+        console.log(`Prepared chunk ${chunks.length}/${total}: ${chunk.size} bytes`);
+        offset += chunkSize;
     }
   
     return chunks;
@@ -105,16 +107,16 @@ function sliceFile(file, chunkSize) {
  * @returns {Promise<ArrayBuffer>}
  */
 function readChunk(chunk) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      resolve(reader.result);
-    };
-    reader.onerror = () => {
-      reject(new Error('Failed to read chunk'));
-    };
-    reader.readAsArrayBuffer(chunk);
-  });
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            resolve(reader.result);
+        };
+        reader.onerror = () => {
+            reject(new Error('Failed to read chunk'));
+        };
+        reader.readAsArrayBuffer(chunk);
+    });
 }
 
 
@@ -123,12 +125,24 @@ function readChunk(chunk) {
  * Send a single chunk (reads it, then emits header + payload).
  */
 async function sendChunkData(fileId, chunkIndex) {
-  const s = senders[fileId];
-  const buffer = await readChunk(s.chunks[chunkIndex]);
-  // tagged as "chunk" 
-  dataChannel.send(JSON.stringify({ type: "chunk", fileId, chunkIndex }));
-  dataChannel.send(buffer);
-  console.log(`Sent chunk ${chunkIndex+1}/${s.totalChunks}`);
+    const s = senders[fileId];
+    const buffer = await readChunk(s.chunks[chunkIndex]);
+    // tagged as "chunk" 
+    dataChannel.send(JSON.stringify({ type: "chunk", fileId, chunkIndex }));
+    dataChannel.send(buffer);
+    console.log(`Sent chunk ${chunkIndex+1}/${s.totalChunks}`);
+
+    // schedule retransmit if no ACK
+    if (s.ackTimers[chunkIndex]) {
+        clearTimeout(s.ackTimers[chunkIndex]);
+    }
+    s.ackTimers[chunkIndex] = setTimeout(() => {
+        // only retransmit if still un-ACKed
+        if (!s.ackedChunks.has(chunkIndex)) {
+            console.warn(`Timeout, retransmitting chunk ${chunkIndex+1}`);
+            sendChunkData(fileId, chunkIndex);
+        }
+    }, RETRANSMIT_TIMEOUT);
 }
 
 
@@ -137,15 +151,15 @@ async function sendChunkData(fileId, chunkIndex) {
  * Advance the sliding window, sending up to windowSize in-flight chunks.
  */
 function sendWindow(fileId) {
-  const s = senders[fileId];
-  // send until either end of file or fill window
-  while (
-    s.nextToSend < s.totalChunks &&
-    s.nextToSend < s.base + s.windowSize
-  ) {
-    sendChunkData(fileId, s.nextToSend);
-    s.nextToSend++;
-  }
+    const s = senders[fileId];
+    // send until either end of file or fill window
+    while (
+        s.nextToSend < s.totalChunks &&
+        s.nextToSend < s.base + s.windowSize
+    ) {
+        sendChunkData(fileId, s.nextToSend);
+        s.nextToSend++;
+    }
 }
 
 
@@ -154,18 +168,18 @@ function sendWindow(fileId) {
  * Once all chunks are here, reassemble and offer a download link.
  */
 function finalizeFileTransfer(fileId) {
-  const t = transfers[fileId];
-  const blob = new Blob(t.chunks, { type: t.mimeType });
-  const url  = URL.createObjectURL(blob);
+    const t = transfers[fileId];
+    const blob = new Blob(t.chunks, { type: t.mimeType });
+    const url  = URL.createObjectURL(blob);
 
-  const link = document.createElement('a');
-  link.href        = url;
-  link.download    = t.fileName;
-  link.textContent = `Download ${t.fileName}`;
-  link.className   = 'incoming-file-download';
+    const link = document.createElement('a');
+    link.href        = url;
+    link.download    = t.fileName;
+    link.textContent = `Download ${t.fileName}`;
+    link.className   = 'incoming-file-download';
 
-  const container = document.getElementById(`incoming-${fileId}`);
-  container.appendChild(link);
+    const container = document.getElementById(`incoming-${fileId}`);
+    container.appendChild(link);
 }
 
 
@@ -223,6 +237,12 @@ function setupDataChannelEvents(channel) {
                 const s = senders[msg.fileId];
                 if (s) {
                     s.ackedChunks.add(msg.chunkIndex);
+
+                    // clear any retransmit timer
+                    if (s.ackTimers[msg.chunkIndex]) {
+                        clearTimeout(s.ackTimers[msg.chunkIndex]);
+                        delete s.ackTimers[msg.chunkIndex];
+                    }
 
                     // If the ACK was for the base of the window, advance base
                     if (msg.chunkIndex === s.base) {
@@ -531,12 +551,13 @@ sendFileBtn.addEventListener('click', () => {
 
     // Initialize sliding-window state for this transfer
     senders[fileId] = {
-        chunks,                   // Array of Blob chunks
-        totalChunks,              // how many
-        windowSize: 4,            // up to 4 in flight
-        base: 0,                  // lowest un-ACKed chunk index
-        nextToSend: 0,            // next chunk index to push
-        ackedChunks: new Set()    // tracks which indexes got ACKs
+        chunks,                     // Array of Blob chunks
+        totalChunks,                // how many
+        windowSize: 4,              // up to 4 in flight
+        base: 0,                    // lowest un-ACKed chunk index
+        nextToSend: 0,              // next chunk index to push
+        ackedChunks: new Set(),      // tracks which indexes got ACKs
+        ackTimers: {}               // track per-chunk timers
     };
 
     // Kick off sending the first window
