@@ -26,7 +26,6 @@ const servers = {
 };
 const dbRef = firebase.database().ref();
 const transfers = {};
-let pendingChunkHeader = null;
 const senders = {};
 // How long to wait (ms) for an ACK before retransmitting
 const RETRANSMIT_TIMEOUT = 5000;
@@ -117,13 +116,57 @@ function readChunk(chunk) {
 }
 
 
+//Build a single ArrayBuffer containing:
+//[2 bytes BE headerLength][header JSON UTF-8][payload bytes]
+function packChunk(headerObj, payloadBuffer) {
+  const headerJson = JSON.stringify(headerObj);
+  const headerBytes = new TextEncoder().encode(headerJson);
+  const totalLen = 2 + headerBytes.byteLength + payloadBuffer.byteLength;
+  const buf = new ArrayBuffer(totalLen);
+  const view = new Uint8Array(buf);
+
+  // 1) Write header length (2-byte big-endian)
+  view[0] = (headerBytes.byteLength >> 8) & 0xff;
+  view[1] = headerBytes.byteLength & 0xff;
+
+  // 2) Copy header
+  view.set(headerBytes, 2);
+
+  // 3) Copy payload
+  view.set(new Uint8Array(payloadBuffer), 2 + headerBytes.byteLength);
+
+  return buf;
+}
+
+
+//Unpack our ArrayBuffer into { header: Object, payload: ArrayBuffer }.
+function unpackChunk(buffer) {
+    const view = new Uint8Array(buffer);
+    // Read header length
+    const headerLen = (view[0] << 8) | view[1];
+    // Slice out header bytes, decode JSON
+    const headerBytes = buffer.slice(2, 2 + headerLen);
+    const headerJson = new TextDecoder().decode(headerBytes);
+    const header = JSON.parse(headerJson);
+    // The rest is payload
+    const payload = buffer.slice(2 + headerLen);
+    return { header, payload };
+}
+
+
 // Send a single chunk (reads it, then emits header + payload)
 async function sendChunkData(fileId, chunkIndex) {
     const s = senders[fileId];
-    const buffer = await readChunk(s.chunks[chunkIndex]);
-    // tagged as "chunk" 
-    fileChannel.send(JSON.stringify({ type: "chunk", fileId, chunkIndex }));
-    fileChannel.send(buffer);
+    const payload = await readChunk(s.chunks[chunkIndex]);
+
+    // Build a single packet
+    const packet = packChunk(
+        { type: "chunk", fileId, chunkIndex },
+        payload
+    );
+    // Send it atomically
+    fileChannel.send(packet);
+
     console.log(`Sent chunk ${chunkIndex+1}/${s.totalChunks}`);
 
     // schedule retransmit if no ACK
@@ -182,7 +225,7 @@ function setupChatChannelEvents(channel) {
     };
     channel.onclose = () => {
         addSignalingMessage("⚠️ Data channel closed.", "received");
-        
+
         messageInput.disabled = true;
         sendButton.disabled  = true;
     };
@@ -276,35 +319,39 @@ function setupFileChannelEvents(channel) {
             return;
         }
 
-        // If we get here, it must be a binary ArrayBuffer
-        if (event.data instanceof ArrayBuffer && pendingChunkHeader) {
-            const { fileId, chunkIndex } = pendingChunkHeader;
-            const buf = event.data;
-
+        // Handle packed binary chunk
+        if (event.data instanceof ArrayBuffer) {
+            const { header, payload } = unpackChunk(event.data);
+            
             // store the chunk
-            const t = transfers[fileId];
-            t.chunks[chunkIndex] = buf;
-            t.receivedCount += 1;
+            const t = transfers[header.fileId];
+            if (!t) {
+                console.warn("fileChannel: chunk for unknown fileId", header.fileId);
+                return;
+            }
+            t.chunks[header.chunkIndex] = payload;
+            t.receivedCount++;
 
-            // send ack to sender
-            const ack = {
-                type: "ack",
-                fileId,
-                chunkIndex
-            };
-            channel.send(JSON.stringify(ack));
-            console.log(`ACK sent for chunk ${chunkIndex}`);
+            // ACK back on this channel
+            channel.send(JSON.stringify({
+                type:       "ack",
+                fileId:     header.fileId,
+                chunkIndex: header.chunkIndex
+            }));
+            console.log(`ACK sent for chunk ${header.chunkIndex}`);
 
             // update UI
-            updateIncomingFileProgress(fileId, t.receivedCount, t.totalChunks);
+            updateIncomingFileProgress(
+                header.fileId,
+                t.receivedCount,
+                t.totalChunks
+            );
 
-            // if done, assemble file
+            // finalize if done
             if (t.receivedCount === t.totalChunks) {
-                finalizeFileTransfer(fileId);
+                finalizeFileTransfer(header.fileId);
             }
-
-            // clear the pending header
-            pendingChunkHeader = null;
+            
             return;
         }
 
