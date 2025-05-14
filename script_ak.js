@@ -31,6 +31,16 @@ const senders = {};
 const RETRANSMIT_TIMEOUT = 5000;
 
 
+//Remove only the `offer` and `answer` fields under the current session in Firebase.
+function clearFirebase() {
+    if (!useFirebase || !sessionId) return;
+    const sessionRef = dbRef.child(`sessions/${sessionId}`);
+    sessionRef.child('offer').remove();
+    sessionRef.child('answer').remove();
+    addSignalingMessage("🗑️ Cleared offer and answer from Firebase.", "received");
+}
+
+
 // UI for incoming file
 /**
  * Display a placeholder in the chat UI for an incoming file transfer.
@@ -228,6 +238,7 @@ function setupChatChannelEvents(channel) {
 
         messageInput.disabled = true;
         sendButton.disabled  = true;
+        clearFirebase();
     };
     channel.onmessage = event => {
         const msgDiv = document.createElement("div");
@@ -253,6 +264,7 @@ function setupFileChannelEvents(channel) {
 
         fileInput.disabled   = true;
         sendFileBtn.disabled = true;
+        clearFirebase();
     };
 
     channel.onmessage = event => {
@@ -351,7 +363,7 @@ function setupFileChannelEvents(channel) {
             if (t.receivedCount === t.totalChunks) {
                 finalizeFileTransfer(header.fileId);
             }
-            
+
             return;
         }
 
@@ -537,6 +549,12 @@ signalingSendButton.addEventListener("click", () => {
     signalingInput.value = "";
 
     addSignalingMessage(input, "sent");
+
+    // User requested to clear Firebase
+    if (input.startsWith("clr firebase")) {
+        clearFirebase();
+        return;
+    }
 
     if (input.startsWith("firebase")) {
         const parts = input.split(" ");
