@@ -27,6 +27,7 @@ const servers = {
 const dbRef = firebase.database().ref();
 const transfers = {};
 let pendingChunkHeader = null;
+const ackResolvers = {};
 
 
 // UI for incoming file
@@ -93,7 +94,7 @@ function sliceFile(file, chunkSize) {
     }
   
     return chunks;
-  } 
+} 
 
 
 // Read Blob array
@@ -166,25 +167,35 @@ function setupDataChannelEvents(channel) {
 
             // File‐metadata handshake?
             if (msg && msg.fileId && msg.totalChunks) {
-            // initialize transfer state
-            transfers[msg.fileId] = {
-                fileName:    msg.fileName,
-                mimeType:    msg.mimeType,
-                fileSize:    msg.fileSize,
-                chunkSize:   msg.chunkSize,
-                totalChunks: msg.totalChunks,
-                chunks:      new Array(msg.totalChunks),
-                receivedCount: 0
-            };
-            showIncomingFileUI(msg.fileId, msg.fileName, msg.totalChunks);
-            return;
+                // initialize transfer state
+                transfers[msg.fileId] = {
+                    fileName:    msg.fileName,
+                    mimeType:    msg.mimeType,
+                    fileSize:    msg.fileSize,
+                    chunkSize:   msg.chunkSize,
+                    totalChunks: msg.totalChunks,
+                    chunks:      new Array(msg.totalChunks),
+                    receivedCount: 0
+                };
+                showIncomingFileUI(msg.fileId, msg.fileName, msg.totalChunks);
+                return;
             }
 
             // Per‐chunk header?
             if (msg && msg.fileId != null && msg.chunkIndex != null) {
-            // stash it until the next (binary) message arrives
-            pendingChunkHeader = { fileId: msg.fileId, chunkIndex: msg.chunkIndex };
-            return;
+                // stash it until the next (binary) message arrives
+                pendingChunkHeader = { fileId: msg.fileId, chunkIndex: msg.chunkIndex };
+                return;
+            }
+
+            if (msg && msg.type === "ack") {
+                const { fileId, chunkIndex } = msg;
+                const key = `${fileId}-${chunkIndex}`;
+                if (ackResolvers[key]) {
+                    ackResolvers[key]();            // resolve the sender’s wait
+                    delete ackResolvers[key];       // clean up
+                }
+                return;  // do not treat as chat
             }
 
             // Otherwise, treat as a chat message
@@ -205,6 +216,15 @@ function setupDataChannelEvents(channel) {
             const t = transfers[fileId];
             t.chunks[chunkIndex] = buf;
             t.receivedCount += 1;
+
+            // send ack to sender
+            const ack = {
+                type: "ack",
+                fileId,
+                chunkIndex
+            };
+            dataChannel.send(JSON.stringify(ack));
+            console.log(`ACK sent for chunk ${chunkIndex}`);
 
             // update UI
             updateIncomingFileProgress(fileId, t.receivedCount, t.totalChunks);
@@ -473,17 +493,23 @@ sendFileBtn.addEventListener('click', () => {
     // send each chunk in sequence
     (async () => {
         for (let i = 0; i < chunks.length; i++) {
-        // Read the chunk into an ArrayBuffer
-        const buffer = await readChunk(chunks[i]);
+            // Read the chunk into an ArrayBuffer
+            const buffer = await readChunk(chunks[i]);
 
-        // a small header so the receiver knows which chunk this is
-        const header = { fileId, chunkIndex: i };
-        dataChannel.send(JSON.stringify(header));
+            // a small header so the receiver knows which chunk this is
+            const header = { fileId, chunkIndex: i };
+            dataChannel.send(JSON.stringify(header));
 
-        // Send the raw bytes
-        dataChannel.send(buffer);
+            // Send the raw bytes
+            dataChannel.send(buffer);
 
-        console.log(`Sent chunk ${i + 1}/${chunks.length}: ${buffer.byteLength} bytes`);
+            console.log(`Sent chunk ${i + 1}/${chunks.length}: ${buffer.byteLength} bytes`);
+
+            // Wait for ACK before proceeding
+            await new Promise(resolve => {
+                ackResolvers[`${fileId}-${i}`] = resolve;
+            });
+            console.log(`ACK received for chunk ${i}`);
         }
     })();
   
