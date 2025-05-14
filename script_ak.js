@@ -27,7 +27,7 @@ const servers = {
 const dbRef = firebase.database().ref();
 const transfers = {};
 let pendingChunkHeader = null;
-const ackResolvers = {};
+const senders = {};
 
 
 // UI for incoming file
@@ -118,6 +118,37 @@ function readChunk(chunk) {
 }
 
 
+// Send chunks
+/**
+ * Send a single chunk (reads it, then emits header + payload).
+ */
+async function sendChunkData(fileId, chunkIndex) {
+  const s = senders[fileId];
+  const buffer = await readChunk(s.chunks[chunkIndex]);
+  // tagged as "chunk" 
+  dataChannel.send(JSON.stringify({ type: "chunk", fileId, chunkIndex }));
+  dataChannel.send(buffer);
+  console.log(`Sent chunk ${chunkIndex+1}/${s.totalChunks}`);
+}
+
+
+// Move the sliding window
+/**
+ * Advance the sliding window, sending up to windowSize in-flight chunks.
+ */
+function sendWindow(fileId) {
+  const s = senders[fileId];
+  // send until either end of file or fill window
+  while (
+    s.nextToSend < s.totalChunks &&
+    s.nextToSend < s.base + s.windowSize
+  ) {
+    sendChunkData(fileId, s.nextToSend);
+    s.nextToSend++;
+  }
+}
+
+
 // Download link for shared file
 /**
  * Once all chunks are here, reassemble and offer a download link.
@@ -189,13 +220,21 @@ function setupDataChannelEvents(channel) {
             }
 
             if (msg && msg.type === "ack") {
-                const { fileId, chunkIndex } = msg;
-                const key = `${fileId}-${chunkIndex}`;
-                if (ackResolvers[key]) {
-                    ackResolvers[key]();            // resolve the sender’s wait
-                    delete ackResolvers[key];       // clean up
+                const s = senders[msg.fileId];
+                if (s) {
+                    s.ackedChunks.add(msg.chunkIndex);
+
+                    // If the ACK was for the base of the window, advance base
+                    if (msg.chunkIndex === s.base) {
+                        while (s.ackedChunks.has(s.base)) {
+                            s.base++;
+                        }
+                    }
+
+                    // Try to fill the window up again
+                    sendWindow(msg.fileId);
                 }
-                return;  // do not treat as chat
+                return;
             }
 
             // Otherwise, treat as a chat message
@@ -490,29 +529,19 @@ sendFileBtn.addEventListener('click', () => {
     // Send the metadata packet first
     dataChannel.send(JSON.stringify(metadata));
 
-    // send each chunk in sequence
-    (async () => {
-        for (let i = 0; i < chunks.length; i++) {
-            // Read the chunk into an ArrayBuffer
-            const buffer = await readChunk(chunks[i]);
+    // Initialize sliding-window state for this transfer
+    senders[fileId] = {
+        chunks,                   // Array of Blob chunks
+        totalChunks,              // how many
+        windowSize: 4,            // up to 4 in flight
+        base: 0,                  // lowest un-ACKed chunk index
+        nextToSend: 0,            // next chunk index to push
+        ackedChunks: new Set()    // tracks which indexes got ACKs
+    };
 
-            // a small header so the receiver knows which chunk this is
-            const header = { type: "chunk", fileId, chunkIndex: i };
-            dataChannel.send(JSON.stringify(header));
+    // Kick off sending the first window
+    sendWindow(fileId);
 
-            // Send the raw bytes
-            dataChannel.send(buffer);
-
-            console.log(`Sent chunk ${i + 1}/${chunks.length}: ${buffer.byteLength} bytes`);
-
-            // Wait for ACK before proceeding
-            await new Promise(resolve => {
-                ackResolvers[`${fileId}-${i}`] = resolve;
-            });
-            console.log(`ACK received for chunk ${i}`);
-        }
-    })();
-  
     // Disable UI to prevent double‐sends until next selection
     sendFileBtn.disabled = true;
     fileInput.value = '';  // clear selection for next time
