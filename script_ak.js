@@ -680,3 +680,27 @@ sendFileBtn.addEventListener('click', () => {
 toggleBtn.addEventListener('click', () => {
 document.getElementById('signaling-pane').classList.toggle('collapsed');
 });
+
+
+// === Carousel logic ===
+const panelWrapper = document.querySelector('.carousel-panel-wrapper');
+const panels       = Array.from(document.querySelectorAll('.carousel-panel'));
+let activeIndex    = 0;
+
+function updateCarousel() {
+  // translate so that activeIndex-th panel is in view
+  panelWrapper.style.transform = `translateX(-${activeIndex * 50}%)`;
+}
+
+document.getElementById('prev-pane').addEventListener('click', () => {
+  activeIndex = (activeIndex - 1 + panels.length) % panels.length;
+  updateCarousel();
+});
+
+document.getElementById('next-pane').addEventListener('click', () => {
+  activeIndex = (activeIndex + 1) % panels.length;
+  updateCarousel();
+});
+
+// start with chat panel
+updateCarousel();
