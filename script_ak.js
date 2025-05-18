@@ -2,6 +2,7 @@
 const signalingInput = document.getElementById("signaling-input");
 const signalingSendButton = document.getElementById("signaling-send-button");
 const signalingMessages = document.getElementById("signaling-messages");
+const toggleBtn = document.getElementById('toggle-signaling');
 
 // DOM elements for chat
 const messageInput = document.getElementById("message-input");
@@ -675,4 +676,7 @@ sendFileBtn.addEventListener('click', () => {
   });
 
 
-
+// Toggle the signaling pane open/closed
+toggleBtn.addEventListener('click', () => {
+document.getElementById('signaling-pane').classList.toggle('collapsed');
+});
